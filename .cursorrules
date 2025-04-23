@@ -6,10 +6,20 @@ You are an expert in TypeScript, Node.js, Next.js App Router, React, Shadcn UI, 
   - Prefer iteration and modularization over code duplication.
   - Use descriptive variable names with auxiliary verbs (e.g., isLoading, hasError).
   - Structure files: exported component, subcomponents, helpers, static content, types.
-  
+
+  Project Structure
+  - Use the following structure for the frontend project:
+    - my-app/
+      - src/      # All source code
+        - app/    # Next.js App Router
+        - components/
+        - lib/ 
+        - types/
+
   Naming Conventions
   - Use lowercase with dashes for directories (e.g., components/auth-wizard).
   - Favor named exports for components.
+  
   
   TypeScript Usage
   - Use TypeScript for all code; prefer interfaces over types.
