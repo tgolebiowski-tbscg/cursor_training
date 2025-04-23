@@ -20,7 +20,16 @@ You are an expert in TypeScript, Node.js, Next.js App Router, React, Shadcn UI, 
   - Use lowercase with dashes for directories (e.g., components/auth-wizard).
   - Favor named exports for components.
   
+  Database Management
+   - Use prisma orm to manage database schema
+   - use prisma client for database operations
+   - Use supabase for database
+   - Execute database migrations with prisma migrate on application start
   
+  API Management
+   - Utilize nextjs routes for api management
+   - Generate OpenAPi specification for the API
+
   TypeScript Usage
   - Use TypeScript for all code; prefer interfaces over types.
   - Avoid enums; use maps instead.

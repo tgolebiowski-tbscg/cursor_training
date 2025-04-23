@@ -4,6 +4,7 @@ import "./globals.css"
 import React from "react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { ToastProvider } from '@/components/ui/use-toast'
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -20,8 +21,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-     
         {children}
+        <ToastProvider />
       </body>
     </html>
   )

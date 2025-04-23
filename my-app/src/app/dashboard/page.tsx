@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Eye, Copy, Pencil, Trash2, Plus } from 'lucide-react'
+import { toast } from '@/components/ui/use-toast'
 
 interface ApiKey {
   id: string
@@ -31,15 +32,8 @@ interface ApiKey {
 }
 
 export default function DashboardPage() {
-  const [apiKeys, setApiKeys] = useState<ApiKey[]>([
-    {
-      id: '1',
-      name: 'default',
-      key: 'tvly-********************************',
-      createdAt: new Date().toISOString(),
-      usage: 24,
-    },
-  ])
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [newKeyName, setNewKeyName] = useState('')
   const [newKeyLimit, setNewKeyLimit] = useState<number>(1000)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -49,44 +43,120 @@ export default function DashboardPage() {
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
 
-  const handleCreateKey = () => {
-    if (!newKeyName.trim()) return
+  // Fetch API keys on component mount
+  useEffect(() => {
+    fetchApiKeys()
+  }, [])
 
-    if (isEditMode && editingKeyId) {
-      // Update existing key
-      setApiKeys(apiKeys.map(key => 
-        key.id === editingKeyId 
-          ? { 
-              ...key, 
-              name: newKeyName,
-              limit: limitEnabled ? newKeyLimit : undefined 
-            } 
-          : key
-      ))
-    } else {
-      // Create new key
-      const newKey: ApiKey = {
-        id: crypto.randomUUID(),
-        name: newKeyName,
-        key: `tvly-********************************`,
-        createdAt: new Date().toISOString(),
-        usage: 0,
-        limit: limitEnabled ? newKeyLimit : undefined,
-      }
-      setApiKeys([...apiKeys, newKey])
+  const fetchApiKeys = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/keys')
+      if (!response.ok) throw new Error('Failed to fetch API keys')
+      const data = await response.json()
+      setApiKeys(data)
+    } catch (error) {
+      console.error('Error fetching API keys:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load API keys',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
     }
-    
-    // Reset form state
-    setNewKeyName('')
-    setNewKeyLimit(1000)
-    setLimitEnabled(false)
-    setIsDialogOpen(false)
-    setIsEditMode(false)
-    setEditingKeyId(null)
   }
 
-  const handleDeleteKey = (id: string) => {
-    setApiKeys(apiKeys.filter(key => key.id !== id))
+  const handleCreateKey = async () => {
+    if (!newKeyName.trim()) return
+
+    try {
+      if (isEditMode && editingKeyId) {
+        // Update existing key
+        const response = await fetch(`/api/keys/${editingKeyId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newKeyName,
+            limit: limitEnabled ? newKeyLimit : undefined,
+          }),
+        })
+
+        if (!response.ok) throw new Error('Failed to update API key')
+        
+        // Refresh the keys list
+        await fetchApiKeys()
+        toast({
+          title: 'Success',
+          description: 'API key updated successfully',
+        })
+      } else {
+        // Create new key
+        const response = await fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: newKeyName,
+            limit: limitEnabled ? newKeyLimit : undefined,
+          }),
+        })
+
+        if (!response.ok) throw new Error('Failed to create API key')
+        
+        const newKey = await response.json()
+        
+        // Update the local state with the new key
+        setApiKeys([...apiKeys, newKey])
+        
+        // Show the full key to the user
+        setVisibleKeyId(newKey.id)
+        
+        toast({
+          title: 'Success',
+          description: 'New API key created successfully',
+        })
+      }
+    } catch (error) {
+      console.error('Error creating/updating API key:', error)
+      toast({
+        title: 'Error',
+        description: isEditMode ? 'Failed to update API key' : 'Failed to create API key',
+        variant: 'destructive',
+      })
+    } finally {
+      // Reset form state
+      setNewKeyName('')
+      setNewKeyLimit(1000)
+      setLimitEnabled(false)
+      setIsDialogOpen(false)
+      setIsEditMode(false)
+      setEditingKeyId(null)
+    }
+  }
+
+  const handleDeleteKey = async (id: string) => {
+    try {
+      const response = await fetch(`/api/keys/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) throw new Error('Failed to delete API key')
+      
+      // Update local state
+      setApiKeys(apiKeys.filter(key => key.id !== id))
+      
+      toast({
+        title: 'Success',
+        description: 'API key deleted successfully',
+      })
+    } catch (error) {
+      console.error('Error deleting API key:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to delete API key',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleEditKey = (id: string) => {
@@ -101,37 +171,65 @@ export default function DashboardPage() {
     }
   }
 
-  const toggleKeyVisibility = (id: string) => {
-    setVisibleKeyId(visibleKeyId === id ? null : id);
-  }
-
-  // Generate a full API key for display when revealed
-  const getDisplayKey = (key: string, isVisible: boolean) => {
-    if (isVisible) {
-      // This is just for demonstration - in a real app, you'd retrieve the actual key from the backend
-      return 'tvly-' + Array(32).fill('0123456789abcdef').map(x => x[Math.floor(Math.random() * x.length)]).join('');
+  const toggleKeyVisibility = async (id: string) => {
+    if (visibleKeyId === id) {
+      // Hide the key
+      setVisibleKeyId(null)
+    } else {
+      // Fetch the full key from the API
+      try {
+        const response = await fetch(`/api/keys/${id}`)
+        if (!response.ok) throw new Error('Failed to fetch API key')
+        
+        const data = await response.json()
+        
+        // Update the key in the local state
+        setApiKeys(apiKeys.map(key => 
+          key.id === id ? { ...key, key: data.key } : key
+        ))
+        
+        // Set this key as visible
+        setVisibleKeyId(id)
+      } catch (error) {
+        console.error('Error fetching API key:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to reveal API key',
+          variant: 'destructive',
+        })
+      }
     }
-    return key;
   }
 
   // Copy key to clipboard
-  const copyKeyToClipboard = (id: string) => {
-    const key = apiKeys.find(k => k.id === id);
-    if (key) {
-      // Get the full key (in a real app, you'd retrieve this from your backend)
-      const fullKey = 'tvly-' + Array(32).fill('0123456789abcdef').map(x => x[Math.floor(Math.random() * x.length)]).join('');
+  const copyKeyToClipboard = async (id: string) => {
+    try {
+      // If the key is not already visible, fetch it
+      let keyToCopy = apiKeys.find(k => k.id === id)?.key
       
+      if (visibleKeyId !== id) {
+        const response = await fetch(`/api/keys/${id}`)
+        if (!response.ok) throw new Error('Failed to fetch API key')
+        
+        const data = await response.json()
+        keyToCopy = data.key
+      }
       // Copy to clipboard
-      navigator.clipboard.writeText(fullKey)
-        .then(() => {
-          // Show copied indicator
-          setCopiedKeyId(id);
-          // Hide copied indicator after 2 seconds
-          setTimeout(() => setCopiedKeyId(null), 2000);
-        })
-        .catch(err => {
-          console.error('Failed to copy: ', err);
-        });
+      if (keyToCopy) {
+        await navigator.clipboard.writeText(keyToCopy)
+        
+        // Show copied indicator
+        setCopiedKeyId(id)
+      }
+      // Hide copied indicator after 2 seconds
+      setTimeout(() => setCopiedKeyId(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to copy API key',
+        variant: 'destructive',
+      })
     }
   }
 
@@ -279,74 +377,88 @@ export default function DashboardPage() {
         To learn more, see the <span className="text-blue-600 underline">documentation page</span>.
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-muted/50">
-            <TableHead className="w-1/4">NAME</TableHead>
-            <TableHead className="w-1/6">USAGE</TableHead>
-            <TableHead className="w-2/5">KEY</TableHead>
-            <TableHead className="w-1/6 text-right">OPTIONS</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {apiKeys.map(key => {
-            const isVisible = visibleKeyId === key.id;
-            const isCopied = copiedKeyId === key.id;
-            return (
-              <TableRow key={key.id} className="border-b">
-                <TableCell className="font-medium">{key.name}</TableCell>
-                <TableCell>{key.usage}</TableCell>
-                <TableCell className="font-mono text-sm">{getDisplayKey(key.key, isVisible)}</TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className={`h-8 w-8 ${isVisible ? 'bg-muted' : ''}`}
-                      onClick={() => toggleKeyVisibility(key.id)}
-                    >
-                      <Eye size={16} />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className={`h-8 w-8 relative ${isCopied ? 'bg-muted' : ''}`}
-                      onClick={() => copyKeyToClipboard(key.id)}
-                    >
-                      {isCopied ? (
-                        <>
-                          <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs py-1 px-2 rounded whitespace-nowrap">
-                            Copied!
-                          </span>
-                          <Copy size={16} className="text-green-500" />
-                        </>
-                      ) : (
-                        <Copy size={16} />
-                      )}
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8"
-                      onClick={() => handleEditKey(key.id)}
-                    >
-                      <Pencil size={16} />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-8 w-8 text-red-500 hover:text-red-600"
-                      onClick={() => handleDeleteKey(key.id)}
-                    >
-                      <Trash2 size={16} />
-                    </Button>
-                  </div>
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <div className="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent"></div>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead className="w-1/4">NAME</TableHead>
+              <TableHead className="w-1/6">USAGE</TableHead>
+              <TableHead className="w-2/5">KEY</TableHead>
+              <TableHead className="w-1/6 text-right">OPTIONS</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {apiKeys.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  No API keys found. Create your first key to get started.
                 </TableCell>
               </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+            ) : (
+              apiKeys.map(key => {
+                const isVisible = visibleKeyId === key.id;
+                const isCopied = copiedKeyId === key.id;
+                return (
+                  <TableRow key={key.id} className="border-b">
+                    <TableCell className="font-medium">{key.name}</TableCell>
+                    <TableCell>{key.usage}</TableCell>
+                    <TableCell className="font-mono text-sm">{key.key}</TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className={`h-8 w-8 ${isVisible ? 'bg-muted' : ''}`}
+                          onClick={() => toggleKeyVisibility(key.id)}
+                        >
+                          <Eye size={16} />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className={`h-8 w-8 relative ${isCopied ? 'bg-muted' : ''}`}
+                          onClick={() => copyKeyToClipboard(key.id)}
+                        >
+                          {isCopied ? (
+                            <>
+                              <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs py-1 px-2 rounded whitespace-nowrap">
+                                Copied!
+                              </span>
+                              <Copy size={16} className="text-green-500" />
+                            </>
+                          ) : (
+                            <Copy size={16} />
+                          )}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8"
+                          onClick={() => handleEditKey(key.id)}
+                        >
+                          <Pencil size={16} />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-red-500 hover:text-red-600"
+                          onClick={() => handleDeleteKey(key.id)}
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      )}
     </div>
   )
 }
